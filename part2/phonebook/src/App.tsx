@@ -1,6 +1,9 @@
-import { useRef, useState } from "react"
+import axios from "axios";
+import { useEffect, useRef, useState } from "react"
+import { Person } from "./Common";
+import personService from './services/persons'
 
-function Filter({filter, setFilter, updateShown}: {filter: string, setFilter: React.Dispatch<React.SetStateAction<string>>, updateShown: Function}) {
+function Filter({filter, setFilter}: {filter: string, setFilter: React.Dispatch<React.SetStateAction<string>>}) {
   return (
     <>
     filter shown with
@@ -8,18 +11,16 @@ function Filter({filter, setFilter, updateShown}: {filter: string, setFilter: Re
       value={filter}
       onChange={(e) => {
         setFilter(e.target.value);
-        updateShown(e.target.value);
       }}
     />
     </>
   )
 }
 
-function PersonForm({persons, updateShown, filter}:
+function PersonForm({persons, setPersons}:
   {
     persons: Person[],
-    updateShown: Function,
-    filter: string
+    setPersons: React.Dispatch<React.SetStateAction<Person[]>>,
   }
   ) {
 
@@ -28,19 +29,30 @@ function PersonForm({persons, updateShown, filter}:
   return (
     <form onSubmit={(e) => {
       e.preventDefault();
-      if (persons.find(p => p.name === newName)) {
-        alert(`${newName} is already in the phonebook`);
+      let foundPerson: Person | undefined = persons.find(p => p.name === newName);
+      if (foundPerson) {
+        if (window.confirm(`${newName} is already in the phonebook. Replace old number with new one?`)) {
+          let changedPerson: Person = {...foundPerson, number: newPhone};
+          personService.changePerson(foundPerson.id, changedPerson).then(changedPersonReturned => {
+            setPersons(persons.map(p => p.id === changedPersonReturned.id ? changedPersonReturned : p));
+          })
+        }
+        setNewName('');
+        setNewPhone('');
         return;
       }
       setNewName('');
       setNewPhone('');
-
-      persons.push({
+      
+      let newPerson = {
         name: newName,
-        id: persons.length,
-        phoneNum: newPhone
-      })
-      updateShown(filter);
+        number: newPhone
+      }
+
+      personService.postNew(newPerson).then(newPersonReturned => setPersons(
+        persons.concat(newPersonReturned)
+      ))
+
     }}>
       <div>
         name: 
@@ -69,46 +81,57 @@ function PersonForm({persons, updateShown, filter}:
   )
 }
 
-function PersonList({shownPersons}: {shownPersons: Person[]}) {
+function PersonList({shownPersons, deletePerson}: {shownPersons: Person[], deletePerson: (id: string) => void}) {
   return (
     <>
-    {shownPersons.map(person => <div key={person.id}>{person.name} {person.phoneNum}</div>)}
+    {shownPersons.map(person => 
+      <div key={person.id}>
+        {person.name} {person.number} 
+        <button onClick={() => {
+          if (window.confirm(`delete person ${person.name}?`)) {
+            deletePerson( person.id);
+          }
+        }}>delete</button>
+      </div>)}
     </>
   )
-  
-  
 }
 
 
-interface Person {
-  id: number,
-  name: string,
-  phoneNum: string
-}
 
 function App() {
 
-  const persons = useRef<Person[]>([]);
+  const [persons, setPersons] = useState<Person[]>([]);
   const [filter, setFilter] = useState('');
-  const [shownPersons, setShownPersons] = useState<Person[]>([...persons.current])
+  useEffect(() => {
+    personService
+      .getAll()
+      .then(initialPersons => {
+        setPersons(initialPersons)
+      })
+  }, [])
 
-  function updateShown(filter: string) {
-    let re = new RegExp(filter.toLowerCase());
-    let shownPersons_ = persons.current.filter(person => re.test(person.name.toLowerCase()))
-    setShownPersons(shownPersons_);
+  function deletePerson(id: string) {
+    personService.deletePerson(id).then(res => {
+      setPersons(persons.filter(p => p.id !== id))
+    }).catch(() => console.log("error deleting the person"))
   }
+
+
+  let re = new RegExp(filter.toLowerCase());
+  let shownPersons = persons.filter(person => re.test(person.name.toLowerCase()))
 
   return (
     <div>
       <h2>Phonebook</h2>
-      <Filter filter={filter} setFilter={setFilter} updateShown={updateShown}></Filter>
+      <Filter filter={filter} setFilter={setFilter}></Filter>
       <h2>Add a new</h2>
       <PersonForm 
-        persons={persons.current}
-        updateShown={updateShown}
-        filter={filter} />
+        persons={persons}
+        setPersons={setPersons}
+      />
       <h2>Numbers</h2>
-      <PersonList shownPersons={shownPersons}/>
+      <PersonList shownPersons={shownPersons} deletePerson={deletePerson}/>
     </div>
   )
 }
