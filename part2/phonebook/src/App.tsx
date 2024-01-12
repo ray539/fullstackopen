@@ -1,5 +1,4 @@
-import axios from "axios";
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { Person } from "./Common";
 import personService from './services/persons'
 
@@ -17,15 +16,23 @@ function Filter({filter, setFilter}: {filter: string, setFilter: React.Dispatch<
   )
 }
 
-function PersonForm({persons, setPersons}:
+function PersonForm({persons, setPersons, setAlertAddedMsg, setAlertDeleteFailMsg}:
   {
     persons: Person[],
     setPersons: React.Dispatch<React.SetStateAction<Person[]>>,
+    setAlertAddedMsg: React.Dispatch<React.SetStateAction<string>>,
+    setAlertDeleteFailMsg: React.Dispatch<React.SetStateAction<string>>
   }
   ) {
 
   const [newName, setNewName] = useState('')
   const [newPhone, setNewPhone] = useState('');
+
+  function doAlert(message: string) {
+    setAlertAddedMsg(message);
+    setTimeout(() => setAlertAddedMsg(''), 2000);
+  }
+
   return (
     <form onSubmit={(e) => {
       e.preventDefault();
@@ -35,10 +42,16 @@ function PersonForm({persons, setPersons}:
           let changedPerson: Person = {...foundPerson, number: newPhone};
           personService.changePerson(foundPerson.id, changedPerson).then(changedPersonReturned => {
             setPersons(persons.map(p => p.id === changedPersonReturned.id ? changedPersonReturned : p));
+            doAlert(`Changed phone number of ${foundPerson!.name}`)
+          }).catch(() => {
+            setAlertDeleteFailMsg(`${foundPerson?.name} has already been removed`);
+            setTimeout(() => setAlertDeleteFailMsg(''), 2000);
           })
+          
         }
         setNewName('');
         setNewPhone('');
+        
         return;
       }
       setNewName('');
@@ -51,7 +64,11 @@ function PersonForm({persons, setPersons}:
 
       personService.postNew(newPerson).then(newPersonReturned => setPersons(
         persons.concat(newPersonReturned)
-      ))
+      )).catch(() => {
+        setAlertDeleteFailMsg('couldn\'t add new number')
+        setTimeout(() => setAlertDeleteFailMsg(''), 2000);
+      })
+      doAlert(`Added ${newPerson.name}`)
 
     }}>
       <div>
@@ -98,11 +115,43 @@ function PersonList({shownPersons, deletePerson}: {shownPersons: Person[], delet
 }
 
 
+function AddedNotification({message}: {message: string}) {
+  let style: React.CSSProperties = {
+    color: 'green',
+    padding: '10px',
+    marginBottom: '10px',
+    background: 'lightGrey',
+    border: '3px solid green',
+    borderRadius: '5px',
+  }
+
+  return (
+    <div style={style}>{message}</div>
+  )
+}
+
+function DeleteFailNotification({message}: {message: string}) {
+  let style: React.CSSProperties = {
+    color: 'red',
+    padding: '10px',
+    marginBottom: '10px',
+    background: 'lightGrey',
+    border: '3px solid red',
+    borderRadius: '5px',
+  }
+
+  return (
+    <div style={style}>{message}</div>
+  )
+}
 
 function App() {
 
   const [persons, setPersons] = useState<Person[]>([]);
   const [filter, setFilter] = useState('');
+  const [alertAddedMsg, setAlertAddedMsg] = useState<string>('');
+  const [alertDeleteFailMsg, setAlertDeleteFailMsg] = useState<string>('');
+
   useEffect(() => {
     personService
       .getAll()
@@ -112,23 +161,33 @@ function App() {
   }, [])
 
   function deletePerson(id: string) {
-    personService.deletePerson(id).then(res => {
+    personService.deletePerson(id).then(() => {
       setPersons(persons.filter(p => p.id !== id))
-    }).catch(() => console.log("error deleting the person"))
+    }).catch(() => {
+      let p: Person = persons.find(p => p.id === id)!;
+      setAlertDeleteFailMsg(`${p.name} has already been deleted`);
+      setTimeout(() => setAlertDeleteFailMsg(''), 2000);
+    })
   }
 
 
   let re = new RegExp(filter.toLowerCase());
   let shownPersons = persons.filter(person => re.test(person.name.toLowerCase()))
 
+
+
   return (
     <div>
       <h2>Phonebook</h2>
+      {alertAddedMsg ? <AddedNotification message={alertAddedMsg} /> : null}
+      {alertDeleteFailMsg ? <DeleteFailNotification message={alertDeleteFailMsg} /> : null}
       <Filter filter={filter} setFilter={setFilter}></Filter>
       <h2>Add a new</h2>
       <PersonForm 
         persons={persons}
         setPersons={setPersons}
+        setAlertAddedMsg={setAlertAddedMsg}
+        setAlertDeleteFailMsg={setAlertDeleteFailMsg}
       />
       <h2>Numbers</h2>
       <PersonList shownPersons={shownPersons} deletePerson={deletePerson}/>
